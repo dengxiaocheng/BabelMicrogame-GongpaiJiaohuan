@@ -13,11 +13,11 @@
 
 ## State
 
-- resource
-- pressure
-- risk
-- relation
-- round
+- badge_match
+- danger
+- suspicion
+- witness_consistency
+- audit_round
 
 ## UI
 

@@ -18,11 +18,11 @@
 - 不把小游戏扩成长期经营或开放世界
 
 ## Required State
-- resource
-- pressure
-- risk
-- relation
-- round
+- badge_match
+- danger
+- suspicion
+- witness_consistency
+- audit_round
 
 ## Success
 在限定时长内完成主循环，并稳定进入至少一个可结算结局
