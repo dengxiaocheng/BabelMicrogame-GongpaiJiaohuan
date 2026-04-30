@@ -18,14 +18,11 @@
 - 不把小游戏扩成长期经营或开放世界
 
 ## Required State
-
-| Variable | Type | Range | Meaning |
-|---|---|---|---|
-| badge_match | Record<badgeId, positionId> | 每张工牌当前映射到的岗位 | 核心映射表，交换操作直接改写此表 |
-| danger | number | 0–100 | 当前累计危险值；岗位本身的危险等级求和 |
-| suspicion | number | 0–100 | 审查员疑点；badge_match 与 witness_consistency 不一致时上升 |
-| witness_consistency | Record<badgeId, testimonyLine[]> | 每张工牌关联的证词条目 | 玩家需手动同步证词，使其与新 badge_match 一致 |
-| audit_round | number | 1–4 | 当前审查轮次；对应 20 分钟节奏的 4 个阶段 |
+- badge_match
+- danger
+- suspicion
+- witness_consistency
+- audit_round
 
 ## Success
 在限定时长内完成主循环，并稳定进入至少一个可结算结局
