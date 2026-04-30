@@ -1,0 +1,43 @@
+/* 工牌交换 场景布局 (SCENE_INTERACTION_SPEC) */
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Courier New',monospace;background:#1a1a2e;color:#e0e0e0;min-height:100vh}
+#app{max-width:900px;margin:0 auto;padding:12px}
+
+#status-bar{display:flex;justify-content:space-between;padding:8px 12px;background:#16213e;border:1px solid #0f3460;border-radius:4px;margin-bottom:8px}
+.stat{font-size:14px}
+.stat.danger{color:#e94560}
+.stat.suspicion{color:#f5a623}
+.stat.round{color:#a0a0a0}
+.stat.critical{animation:blink .5s infinite}
+@keyframes blink{50%{opacity:.3}}
+
+#phase-indicator{text-align:center;padding:6px;font-size:13px;color:#888;margin-bottom:8px}
+.phase.active{color:#e94560;font-weight:bold}
+
+#main-area{display:grid;grid-template-columns:1fr 1fr;gap:12px;min-height:400px}
+#position-board{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-content:start}
+
+.position-slot{background:#16213e;border:2px solid #0f3460;border-radius:6px;padding:8px;min-height:90px}
+.slot-header{display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px}
+.pos-title{font-weight:bold}.pos-zone{color:#666;font-size:11px}
+.pos-danger{font-size:12px;margin-bottom:6px}
+.danger-level-5{color:#ff0040}.danger-level-4{color:#e94560}.danger-level-3{color:#f5a623}
+.danger-level-2{color:#f5d623}.danger-level-1{color:#50c878}
+
+.badge-card{background:#0f3460;border:1px solid #e94560;border-radius:4px;padding:6px;cursor:grab;user-select:none;transition:transform .15s}
+.badge-card:hover{transform:translateY(-2px)}
+.badge-card.empty{border-color:#333;color:#555;cursor:default}
+.badge-card.empty:hover{transform:none}
+.badge-name{font-weight:bold;font-size:14px}.badge-face{font-size:11px;color:#aaa;margin-top:2px}
+
+#testimony-panel{display:flex;flex-direction:column;gap:8px}
+.testimony-card{background:#16213e;border:1px solid #0f3460;border-radius:6px;padding:8px}
+.testimony-header{font-size:13px;font-weight:bold;margin-bottom:4px;display:flex;justify-content:space-between}
+.testimony-header .match{color:#50c878}.testimony-header .mismatch{color:#e94560}
+.testimony-line{font-size:12px;padding:2px 4px;cursor:pointer;border-radius:2px}
+.testimony-line:hover{background:#0f3460}
+
+#controls{display:flex;gap:8px;margin-top:8px}
+#controls button{flex:1;padding:10px;background:#0f3460;color:#e0e0e0;border:1px solid #e94560;border-radius:4px;cursor:pointer;font-family:inherit;font-size:14px}
+#controls button:hover{background:#e94560}
+#event-hint{margin-top:8px;padding:8px;background:#16213e;border:1px solid #0f3460;border-radius:4px;font-size:12px;color:#aaa;min-height:36px}
