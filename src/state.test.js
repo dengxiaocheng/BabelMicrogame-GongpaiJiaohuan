@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { initGameState, swapBadge, updateTestimony, runAudit, calculateDanger, advanceRound, checkEnding } from './state.js'
+import { initGameState, swapBadge, updateTestimony, runAudit, calculateDanger, advanceRound, checkEnding, calculateWitnessScore, settleRound, resolveOneLoop } from './state.js'
 
 describe('initGameState', () => {
   it('uses 2 workers for round 1', () => {
@@ -118,5 +118,102 @@ describe('checkEnding', () => {
   })
   it('ongoing → null', () => {
     assert.equal(checkEnding(initGameState()), null)
+  })
+})
+
+describe('swapBadge dual pressure', () => {
+  it('adds suspicion on swap (risk pressure)', () => {
+    const s = initGameState()
+    const [b1, b2] = Object.keys(s.badge_match)
+    const ns = swapBadge(s, b1, s.badge_match[b2])
+    assert.ok(ns.suspicion > s.suspicion, 'swap should increase suspicion')
+  })
+  it('changes danger on swap to empty position (survival pressure)', () => {
+    const s = initGameState()
+    const [b1] = Object.keys(s.badge_match)
+    const ns = swapBadge(s, b1, 'pos_warehouse')
+    assert.notEqual(ns.danger, s.danger)
+    assert.ok(ns.danger < s.danger, 'moving to safer position should reduce danger')
+  })
+})
+
+describe('calculateWitnessScore', () => {
+  it('returns 0 when all testimonies mismatch', () => {
+    const s = initGameState()
+    assert.equal(calculateWitnessScore(s), 0)
+  })
+  it('returns 1 when all testimonies match', () => {
+    const s = initGameState()
+    for (const [bid, pid] of Object.entries(s.badge_match)) {
+      s.witness_consistency[bid].at_position = pid
+    }
+    assert.equal(calculateWitnessScore(s), 1)
+  })
+  it('returns 0.5 when half match', () => {
+    const s = initGameState()
+    const [b1] = Object.keys(s.badge_match)
+    s.witness_consistency[b1].at_position = s.badge_match[b1]
+    assert.equal(calculateWitnessScore(s), 0.5)
+  })
+})
+
+describe('settleRound', () => {
+  it('detects danger ending', () => {
+    const s = { ...initGameState(), danger: 100 }
+    const { result } = settleRound(s)
+    assert.equal(result.ending.type, 'eliminated_danger')
+  })
+  it('detects suspicion ending', () => {
+    const s = { ...initGameState(), suspicion: 100 }
+    const { result } = settleRound(s)
+    assert.equal(result.ending.type, 'eliminated_suspicion')
+  })
+  it('settles without ending when within thresholds', () => {
+    const s = initGameState()
+    const { result } = settleRound(s)
+    assert.equal(result.ending, null)
+    assert.ok(result.danger_score >= 0)
+    assert.ok(result.witness_score >= 0 && result.witness_score <= 1)
+  })
+  it('audit pass lowers suspicion', () => {
+    const s = { ...initGameState(), suspicion: 20 }
+    for (const [bid, pid] of Object.entries(s.badge_match)) {
+      s.witness_consistency[bid].at_position = pid
+    }
+    const { result } = settleRound(s)
+    assert.equal(result.audit_passed, true)
+    assert.ok(result.suspicion_after < result.suspicion_before)
+  })
+})
+
+describe('resolveOneLoop', () => {
+  it('runs full loop and advances round', () => {
+    const s = initGameState()
+    const [b1, b2] = Object.keys(s.badge_match)
+    const { state: ns, result } = resolveOneLoop(s, {
+      swap: { badgeId: b1, targetPositionId: s.badge_match[b2] },
+      testimonyUpdates: [
+        { badgeId: b1, field: 'at_position', value: s.badge_match[b2] },
+        { badgeId: b2, field: 'at_position', value: s.badge_match[b1] },
+      ],
+    })
+    assert.equal(result.ending, null)
+    assert.equal(ns.audit_round, s.audit_round + 1)
+  })
+  it('eliminated when suspicion too high', () => {
+    const s = { ...initGameState(), suspicion: 95 }
+    const { result } = resolveOneLoop(s, {
+      swap: { badgeId: Object.keys(s.badge_match)[0], targetPositionId: 'pos_warehouse' },
+    })
+    assert.ok(result.ending !== null)
+    assert.ok(['eliminated_suspicion', 'eliminated_danger'].includes(result.ending.type))
+  })
+  it('no swap skips swap phase', () => {
+    const s = initGameState()
+    for (const [bid, pid] of Object.entries(s.badge_match)) {
+      s.witness_consistency[bid].at_position = pid
+    }
+    const { state: ns } = resolveOneLoop(s, {})
+    assert.equal(ns.audit_round, s.audit_round + 1)
   })
 })

@@ -25,6 +25,8 @@ export function swapBadge(state, badgeId, targetPositionId) {
   if (other) bm[other] = src
   const ns = { ...state, badge_match: bm }
   ns.danger = calculateDanger(ns)
+  // State coupling: 换牌同时推动 survival (danger) + risk (suspicion)
+  ns.suspicion = Math.min(100, state.suspicion + 3)
   return ns
 }
 
@@ -70,4 +72,66 @@ export function checkEnding(state) {
   if (state.suspicion >= 100) return { type: 'eliminated_suspicion', message: '审查员判定身份造假' }
   if (state.audit_round >= 4 && state.danger < 80 && state.suspicion < 80) return { type: 'survive', message: '通过全部审查' }
   return null
+}
+
+// calculateWitnessScore — 证词一致性比率 (0~1)
+export function calculateWitnessScore(state) {
+  const entries = Object.entries(state.witness_consistency)
+  if (entries.length === 0) return 1
+  let match = 0
+  for (const [bid, t] of entries) {
+    if (t.at_position === state.badge_match[bid]) match++
+  }
+  return match / entries.length
+}
+
+// settleRound — 一次审查结算：audit → suspicion → ending check
+// 产出包含 survival (danger_score) + risk (witness_score, suspicion) 两类压力
+export function settleRound(state) {
+  const audit = runAudit(state)
+  const newSuspicion = Math.max(0, Math.min(100, state.suspicion + audit.suspicion_delta))
+  const witnessScore = calculateWitnessScore(state)
+  const dangerScore = calculateDanger(state)
+  const settled = { ...state, suspicion: newSuspicion }
+  const result = {
+    danger_score: dangerScore,
+    witness_score: witnessScore,
+    audit_passed: audit.passed,
+    suspicion_before: state.suspicion,
+    suspicion_after: newSuspicion,
+    ending: null,
+  }
+  if (settled.danger >= 100) {
+    result.ending = { type: 'eliminated_danger', message: '被分配到极端危险岗位' }
+  } else if (settled.suspicion >= 100) {
+    result.ending = { type: 'eliminated_suspicion', message: '审查员判定身份造假' }
+  } else if (state.audit_round >= 4 && settled.danger < 80 && settled.suspicion < 80) {
+    result.ending = { type: 'survive', message: '通过全部审查' }
+  }
+  return { result, state: settled, audit }
+}
+
+// resolveOneLoop — 执行一次完整主循环：swap → align → audit → settle → advance
+// actions: { swap?: { badgeId, targetPositionId }, testimonyUpdates?: [{ badgeId, field, value }] }
+export function resolveOneLoop(state, actions = {}) {
+  let current = { ...state }
+  // Phase 2: swap — survival + risk 双重压力
+  if (actions.swap) {
+    current = swapBadge(current, actions.swap.badgeId, actions.swap.targetPositionId)
+  }
+  // Phase 3: align testimony — risk 压力
+  if (actions.testimonyUpdates) {
+    for (const tu of actions.testimonyUpdates) {
+      const r = updateTestimony(current, tu.badgeId, tu.field, tu.value)
+      current = r.state
+    }
+  }
+  // Phase 4-5: audit + settle — 综合结算
+  const settlement = settleRound(current)
+  if (!settlement.result.ending) {
+    const next = advanceRound(settlement.state)
+    if (next) settlement.state = next
+    else settlement.result.ending = { type: 'timeout', message: '时间到' }
+  }
+  return settlement
 }

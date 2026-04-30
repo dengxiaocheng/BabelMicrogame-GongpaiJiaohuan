@@ -2,7 +2,7 @@
  * main.js — 工牌交换 主循环入口
  * Direction Lock: 查看岗位 -> 交换工牌 -> 调整证词 -> 接受审查 -> 结算危险和疑点
  */
-import { initGameState, swapBadge, updateTestimony, runAudit, advanceRound, checkEnding } from './state.js'
+import { initGameState, swapBadge, updateTestimony, runAudit, advanceRound, checkEnding, settleRound } from './state.js'
 import { POSITIONS, WORKERS, FACE_FEATURES } from './content/badgeData.js'
 import { CORE_LOOP_PHASES, getEventsByPhase } from './content/eventPool.js'
 
@@ -46,9 +46,9 @@ export function handleAudit() {
 
 export function handleSettle() {
   if (currentPhase !== 'settle') return null
-  const ending = checkEnding(gameState)
-  if (ending) return ending
-  const next = advanceRound(gameState)
+  const { result, state: settledState } = settleRound(gameState)
+  if (result.ending) return result.ending
+  const next = advanceRound(settledState)
   if (!next) return { type: 'timeout', message: '时间到' }
   gameState = next
   currentPhase = 'recon'
