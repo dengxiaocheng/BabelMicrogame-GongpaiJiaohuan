@@ -5,19 +5,41 @@
  */
 import { initGameState, swapBadge, updateTestimony, runAudit, advanceRound, settleRound, calculateWitnessScore } from './state.js'
 import { POSITIONS, WORKERS, FACE_FEATURES, TESTIMONY_TEMPLATES } from './content/badgeData.js'
-import { CORE_LOOP_PHASES, getEventsByPhase } from './content/eventPool.js'
+import { CORE_LOOP_PHASES, getEventsByPhase, getAvailableEvents } from './content/eventPool.js'
 
 let gameState = null
 let currentPhase = 'recon'
 let feedbackFlash = null
 let auditResult = null
 let draggedBadgeId = null
+let endingState = null
 
 // ─── Helpers ─────────────────────────────────────────────────────
 const phaseLabel = (p) => ({ recon: '查看岗位', swap: '交换工牌', align: '调整证词', audit: '接受审查', settle: '结算' })[p] ?? p
 const workerName = (id) => WORKERS.find(w => w.id === id)?.name ?? id
 const posTitle = (id) => POSITIONS.find(p => p.id === id)?.title ?? id
 const isBefore = (a, b) => CORE_LOOP_PHASES.indexOf(a) < CORE_LOOP_PHASES.indexOf(b)
+
+// ─── Event bridge ────────────────────────────────────────────────
+// eventPool 使用小整数状态 (danger 0~5, suspicion 0~7, badge_match 0~5)
+// state.js 使用 0~100 范围; 此桥接函数转换格式以匹配事件触发条件
+
+function toEventState(state) {
+  const ws = calculateWitnessScore(state)
+  return {
+    audit_round: state.audit_round,
+    danger: Math.round(state.danger / 20),
+    suspicion: Math.round(state.suspicion / 14),
+    badge_match: Math.round(ws * 5),
+    witness_consistency: Math.round(ws * 5),
+  }
+}
+
+function triggerPhaseEvent(phase) {
+  if (!gameState) return null
+  const events = getAvailableEvents(toEventState(gameState), phase)
+  return events.length ? events[0] : null
+}
 
 function showFeedback(type, message) {
   feedbackFlash = { type, message }
@@ -30,7 +52,12 @@ export function startGame() {
   currentPhase = 'recon'
   auditResult = null
   feedbackFlash = null
+  endingState = null
+  const overlay = document.getElementById('ending-overlay')
+  if (overlay) overlay.remove()
+  const reconEvent = triggerPhaseEvent('recon')
   render()
+  if (reconEvent) showFeedback('swap', reconEvent.narrative)
 }
 
 export function nextCorePhase() {
@@ -38,6 +65,8 @@ export function nextCorePhase() {
   if (idx < CORE_LOOP_PHASES.length - 1) {
     currentPhase = CORE_LOOP_PHASES[idx + 1]
     auditResult = null
+    const phaseEvent = triggerPhaseEvent(currentPhase)
+    if (phaseEvent) showFeedback('swap', phaseEvent.narrative)
   }
   render()
 }
@@ -82,22 +111,28 @@ function handleSettle() {
   const { result, state: settled } = settleRound(gameState)
   if (result.ending) {
     gameState = settled
+    endingState = result.ending
     showFeedback(result.ending.type === 'survive' ? 'pass' : 'fail', result.ending.message)
     render()
+    renderEnding()
     return
   }
   const next = advanceRound(settled)
   if (!next) {
     gameState = settled
+    endingState = { type: 'timeout', message: '时间到' }
     showFeedback('fail', '时间到')
     render()
+    renderEnding()
     return
   }
   gameState = next
   currentPhase = 'recon'
   auditResult = null
+  const reconEvent = triggerPhaseEvent('recon')
   showFeedback('pass', `进入第 ${next.audit_round} 轮`)
   render()
+  if (reconEvent) setTimeout(() => showFeedback('swap', reconEvent.narrative), 400)
 }
 
 // ─── Drag & Drop ─────────────────────────────────────────────────
@@ -173,6 +208,59 @@ function moveTouchGhost(touch) {
   if (!touchGhost) return
   touchGhost.style.left = (touch.clientX - 30) + 'px'
   touchGhost.style.top = (touch.clientY - 20) + 'px'
+}
+
+// ─── Ending overlay ──────────────────────────────────────────────
+
+function injectEndingStyles() {
+  if (document.getElementById('ending-styles')) return
+  const style = document.createElement('style')
+  style.id = 'ending-styles'
+  style.textContent = `
+    .ending-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(26,26,46,.92);display:flex;align-items:center;justify-content:center;z-index:100}
+    .ending-content{text-align:center;padding:32px;background:#16213e;border:2px solid #0f3460;border-radius:8px;max-width:400px}
+    .ending-title{font-size:22px;margin-bottom:12px}
+    .ending-pass .ending-title{color:#50c878}.ending-fail .ending-title{color:#e94560}
+    .ending-message{font-size:14px;color:#aaa;margin-bottom:16px}
+    .ending-stats{display:flex;gap:16px;justify-content:center;margin-bottom:16px;font-size:13px;color:#888}
+    .ending-scores{display:flex;flex-direction:column;gap:6px;margin-bottom:16px;font-size:12px;color:#666}
+    #btn-restart{padding:10px 24px;background:#0f3460;color:#e0e0e0;border:1px solid #e94560;border-radius:4px;cursor:pointer;font-family:inherit;font-size:14px}
+    #btn-restart:hover{background:#e94560;color:#fff}
+  `
+  document.head.appendChild(style)
+}
+
+function renderEnding() {
+  if (!endingState) return
+  injectEndingStyles()
+  let overlay = document.getElementById('ending-overlay')
+  if (!overlay) {
+    overlay = document.createElement('div')
+    overlay.id = 'ending-overlay'
+    document.getElementById('app').appendChild(overlay)
+  }
+  const titles = {
+    eliminated_danger: '事故 — 被分配到极端危险岗位',
+    eliminated_suspicion: '暴露 — 审查员判定身份造假',
+    survive: '存活 — 通过全部审查',
+    timeout: '时间到',
+  }
+  const ws = Math.round(calculateWitnessScore(gameState) * 100)
+  overlay.className = `ending-overlay ending-${endingState.type === 'survive' ? 'pass' : 'fail'}`
+  overlay.innerHTML = `
+    <div class="ending-content">
+      <h2 class="ending-title">${titles[endingState.type] ?? endingState.type}</h2>
+      <p class="ending-message">${endingState.message}</p>
+      <div class="ending-stats">
+        <span>危险 ${gameState.danger}</span>
+        <span>疑点 ${gameState.suspicion}</span>
+        <span>一致 ${ws}%</span>
+        <span>轮次 ${gameState.audit_round}/4</span>
+      </div>
+      <button id="btn-restart">再来一局</button>
+    </div>
+  `
+  document.getElementById('btn-restart').addEventListener('click', startGame)
 }
 
 // ─── Rendering ───────────────────────────────────────────────────
@@ -340,7 +428,7 @@ function renderFeedback() {
     return
   }
   eh.className = 'event-hint'
-  const ev = getEventsByPhase(currentPhase)
+  const phaseEvent = triggerPhaseEvent(currentPhase)
   const hints = {
     recon: '查看各岗位的危险等级 — 红色越多越需要换牌',
     swap: '拖动工牌到目标岗位完成交换（每次交换疑点+3）',
@@ -348,7 +436,7 @@ function renderFeedback() {
     audit: '点击「接受审查」检查证词一致性',
     settle: '点击「结算本轮」查看结果并进入下一轮',
   }
-  eh.textContent = ev.length ? ev[0].narrative : (hints[currentPhase] ?? '')
+  eh.textContent = phaseEvent ? phaseEvent.narrative : (hints[currentPhase] ?? '')
 }
 
 // ─── Bootstrap ────────────────────────────────────────────────────
