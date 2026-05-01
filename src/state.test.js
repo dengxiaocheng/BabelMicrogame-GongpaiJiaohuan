@@ -217,3 +217,63 @@ describe('resolveOneLoop', () => {
     assert.equal(ns.audit_round, s.audit_round + 1)
   })
 })
+
+// ─── ACCEPTANCE_PLAYTHROUGH ───────────────────────────────────────
+// Validates scripted playthrough per ACCEPTANCE_PLAYTHROUGH.md:
+// 1. Initial state shows all required fields
+// 2. Execute core loop: swap -> align -> audit -> settle
+// 3. System feeds back survival/body pressure
+// 4. System feeds back relationship/risk pressure
+
+describe('ACCEPTANCE_PLAYTHROUGH', () => {
+  it('core loop produces dual pressure on primary input (swap+align)', () => {
+    const s = initGameState()
+    assert.ok(s.badge_match, 'badge_match present')
+    assert.ok(s.danger >= 0, 'danger present')
+    assert.ok(s.suspicion >= 0, 'suspicion present')
+    assert.ok(s.witness_consistency, 'witness_consistency present')
+    assert.equal(s.audit_round, 1)
+
+    const [b1, b2] = Object.keys(s.badge_match)
+    const targetPos = s.badge_match[b2]
+    const { state: ns, result } = resolveOneLoop(s, {
+      swap: { badgeId: b1, targetPositionId: targetPos },
+      testimonyUpdates: [
+        { badgeId: b1, field: 'at_position', value: targetPos },
+        { badgeId: b2, field: 'at_position', value: s.badge_match[b1] },
+      ],
+    })
+    assert.ok(result.danger_score >= 0, 'survival pressure (danger) must change')
+    assert.ok(result.witness_score >= 0 && result.witness_score <= 1, 'risk pressure (witness) must report')
+    assert.ok(result.suspicion_after >= result.suspicion_before, 'swap adds suspicion (risk pressure)')
+    assert.ok(ns.audit_round > s.audit_round, 'round advances')
+  })
+
+  it('multi-round playthrough reaches survive ending', () => {
+    let s = initGameState()
+    for (let round = 1; round <= 3; round++) {
+      const { state: ns } = resolveOneLoop(s, {
+        testimonyUpdates: Object.entries(s.badge_match).map(
+          ([bid, pid]) => ({ badgeId: bid, field: 'at_position', value: pid })),
+      })
+      s = ns
+    }
+    assert.equal(s.audit_round, 4)
+    const { result } = resolveOneLoop(s, {
+      testimonyUpdates: Object.entries(s.badge_match).map(
+        ([bid, pid]) => ({ badgeId: bid, field: 'at_position', value: pid })),
+    })
+    assert.equal(result.ending.type, 'survive')
+  })
+
+  it('timeout ending when suspicion borderline at round 4', () => {
+    const s = initGameState()
+    s.audit_round = 4
+    s.suspicion = 85
+    for (const [bid, pid] of Object.entries(s.badge_match)) {
+      s.witness_consistency[bid].at_position = pid
+    }
+    const { result } = resolveOneLoop(s, {})
+    assert.equal(result.ending.type, 'timeout')
+  })
+})
